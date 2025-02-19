@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Web Mapping</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.5.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.5.0/mapbox-gl.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        .map-overlay {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid black;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            border-radius: 3px;
+        }
+        h2, h3 {
+            margin: 10px;
+            font-size: 18px;
+        }
+        p {
+            margin: 10px;
+        }
+        #features {
+            top: 10px;
+            left: 10px;
+            max-width: 300px;
+        }
+        #legend {
+            position: absolute;
+            bottom: 30px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            font-size: 14px;
+            display: flex;
+            flex-direction: column;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .legend-key {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class='map-overlay' id='features'>
+        <h2>Washington COVID-19 Case Rate (Per 10k people)</h2>
+        <div id='text-description'><p>Hover over a county!</p></div>
+    </div>
+    <div class='map-overlay' id='legend'></div>
+    
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoicWl6aGV4dSIsImEiOiJjbTZzbmE1bHcwOWFrMmtvc3M2bWVmd2d6In0.W9AIJnK5UM1GNNwKZIXU2g';
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/light-v10',
+            center: [-120.5, 47.5],
+            zoom: 6
+        });
+        
+        async function geojsonFetch() {
+            let response = await fetch('assets/wa-covid-data-102521.geojson');
+            let covidData = await response.json();
+            
+            map.on('load', function () {
+                map.addSource('covid-data', {
+                    type: 'geojson',
+                    data: covidData
+                });
+                map.addLayer({
+                    id: 'covid-layer',
+                    type: 'fill',
+                    source: 'covid-data',
+                    paint: {
+                        'fill-color': [
+                            'step', ['get', 'casePer10k'],
+                            '#FFEDA0', 600,
+                            '#FED976', 800,
+                            '#FEB24C', 1000,
+                            '#FD8D3C', 1200,
+                            '#FC4E2A', 1500,
+                            '#E31A1C'
+                        ],
+                        'fill-opacity': 0.7,
+                        'fill-outline-color': '#BBBBBB'
+                    }
+                });
+                
+                map.addLayer({
+                    id: 'highlight-layer',
+                    type: 'fill',
+                    source: 'covid-data',
+                    paint: {
+                        'fill-color': '#000',
+                        'fill-opacity': 0.3
+                    },
+                    filter: ['==', 'name', '']
+                });
+                
+                let hoveredId = null;
+                map.on('mousemove', ({point}) => {
+                    const counties = map.queryRenderedFeatures(point, { layers: ['covid-layer'] });
+                    if (counties.length) {
+                        if (hoveredId !== null) {
+                            map.setFeatureState({ source: 'covid-data', id: hoveredId }, { hover: false });
+                        }
+                        hoveredId = counties[0].id;
+                        map.setFeatureState({ source: 'covid-data', id: hoveredId }, { hover: true });
+                        
+                        map.setFilter('highlight-layer', ['==', 'name', counties[0].properties.name]);
+                        document.getElementById('text-description').innerHTML = 
+                            `<h3>${counties[0].properties.name}</h3><p><strong>Case Rate:</strong> ${counties[0].properties.casePer10k} per 10k people</p>`;
+                    } else {
+                        if (hoveredId !== null) {
+                            map.setFeatureState({ source: 'covid-data', id: hoveredId }, { hover: false });
+                            hoveredId = null;
+                        }
+                        map.setFilter('highlight-layer', ['==', 'name', '']);
+                        document.getElementById('text-description').innerHTML = '<p>Hover over a county!</p>';
+                    }
+                });
+            });
+            
+            // Add legend content
+            const legend = document.getElementById('legend');
+            legend.innerHTML = '<b>COVID-19 Case Rate (Per 10k people)</b><br>';
+            const layers = ['<600', '601-800', '801-1000', '1001-1200', '1201-1500', '>1500'];
+            const colors = ['#FFEDA0', '#FED976', '#FEB24C', '#FD8D3C', '#FC4E2A', '#E31A1C'];
+            layers.forEach((layer, i) => {
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `<span class='legend-key' style='background:${colors[i]}'></span> ${layer}`;
+                legend.appendChild(item);
+            });
+            legend.innerHTML += '<br><small>Data Sources: COVID-19 case data from The New York Times.</small>';
+            
+            // Add compass control
+            map.addControl(new mapboxgl.NavigationControl());
+        }
+        geojsonFetch();
+    </script>
+</body>
+</html>
